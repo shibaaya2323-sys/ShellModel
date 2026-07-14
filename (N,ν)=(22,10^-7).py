@@ -85,6 +85,7 @@ n_E_visc_half = np.array(np.exp(-nu * (n_k**2) * (dt * 0.5)), dtype=np.float64)
 # 平均化のための貯金箱
 n_E_kn_sum = np.zeros(N, dtype=np.float64)
 epsilon_sum = np.float64(0.0)
+injection_sum = np.float64(0.0)
 avg_count = 0
 
 print(f"総ステップ数: {total_steps} 回")
@@ -117,6 +118,9 @@ for step in range(total_steps):
         n_E_kn_sum += n_E_kn_instant
         epsilon_instant = nu * np.sum((n_k**2) * n_abs_u_sq)
         epsilon_sum += epsilon_instant
+        injection_instant = np.real(f * np.conj(n_u[3]))
+        injection_sum += injection_instant
+
         avg_count += 1
 
 print("計算完了！")
@@ -124,6 +128,14 @@ print("計算完了！")
 # 時間平均エネルギースペクトル
 n_E_kn_avg = n_E_kn_sum / avg_count
 epsilon_avg = epsilon_sum / avg_count
+injection_avg = injection_sum / avg_count
+
+print()
+print("--- 統計定常状態での時間平均 ---")
+print(f"平均エネルギー注入率 <I>       = {injection_avg:.10e}")
+print(f"平均エネルギー散逸率 <epsilon> = {epsilon_avg:.10e}")
+print(f"<I> / <epsilon>                = {injection_avg / epsilon_avg:.10f}")
+print(f"相対誤差                       = {abs(injection_avg - epsilon_avg) / abs(epsilon_avg):.6e}")
 
 # --- 4. 論文通りの無次元化（正規化）処理 ---
 k_d = (epsilon_avg / (nu**3))**(0.25)
