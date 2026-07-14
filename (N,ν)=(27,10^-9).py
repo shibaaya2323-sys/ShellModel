@@ -60,102 +60,109 @@ def n_nonlinear_n(n_u):
     return n_nl
 
 
-# --- ⏰ 時間に関する設定 ---
-dt = np.float64(0.000075)
-total_time = np.float64(150.0)
-avg_start_time = np.float64(100.0)
+# --- ⏰ 時間設定を変えて計算する関数 ---
+def run_simulation(dt, total_time, avg_start_time):
 
-total_steps = int(round(total_time / dt))
-avg_start_step = int(round(avg_start_time / dt))
+    dt = np.float64(dt)
+    total_time = np.float64(total_time)
+    avg_start_time = np.float64(avg_start_time)
 
-# 乱数のシードを固定（前回のやつもしっかり組込！）
-np.random.seed(42)
+    total_steps = int(round(total_time / dt))
+    avg_start_step = int(round(avg_start_time / dt))
 
-# 初期条件（流速は複素数なので complex128）
-n_u = np.zeros(N, dtype=np.complex128)
-for i in range(N):
-    energy_initial = (n_k[i]**2) * np.exp(-(n_k[i]**2))
-    phase = np.random.uniform(0.0,2.0 * np.pi)
-    n_u[i] = np.sqrt(2.0 * n_k[i] * energy_initial) * np.exp(1.0j * phase)
+    # 乱数のシードを固定
+    np.random.seed(42)
 
-# 積分因子法の係数事前計算（実数配列なので float64）
-n_E_visc = np.array(np.exp(-nu * (n_k**2) * dt), dtype=np.float64)
-n_E_visc_half = np.array(np.exp(-nu * (n_k**2) * (dt * 0.5)), dtype=np.float64)
+    # 初期条件
+    n_u = np.zeros(N, dtype=np.complex128)
 
-# 平均化のための貯金箱
-n_E_kn_sum = np.zeros(N, dtype=np.float64)
-epsilon_sum = np.float64(0.0)
-injection_sum = np.float64(0.0)
-avg_count = 0
+    for i in range(N):
+        energy_initial = (n_k[i]**2) * np.exp(-(n_k[i]**2))
+        phase = np.random.uniform(0.0, 2.0 * np.pi)
 
-print(f"総ステップ数: {total_steps} 回")
-print("倍精度（complex128）明示モードで計算中...")
+        n_u[i] = (np.sqrt(2.0 * n_k[i] * energy_initial) * np.exp(1.0j * phase))
 
-for step in range(total_steps):
-    # --- 改良型ルンゲ・クッタ（RK4）ステップ ---
-    n_k1 = n_nonlinear_n(n_u)
+    # 積分因子
+    n_E_visc = np.array(np.exp(-nu * (n_k**2) * dt),dtype=np.float64)
 
-    n_u_half1 = (n_u + 0.5 * dt * n_k1) * n_E_visc_half
-    n_k2 = n_nonlinear_n(n_u_half1)
+    n_E_visc_half = np.array(np.exp(-nu * (n_k**2) * (dt * 0.5)),dtype=np.float64)
 
-    n_u_half2 = n_u * n_E_visc_half + 0.5 * dt * n_k2
-    n_k3 = n_nonlinear_n(n_u_half2)
+    # 平均化用
+    n_E_kn_sum = np.zeros(N, dtype=np.float64)
+    epsilon_sum = np.float64(0.0)
+    injection_sum = np.float64(0.0)
+    avg_count = 0
 
-    n_u_full = n_E_visc * n_u + dt * n_E_visc_half * n_k3
-    n_k4 = n_nonlinear_n(n_u_full)
+    print(f"総ステップ数: {total_steps} 回")
+    print("倍精度（complex128）明示モードで計算中...")
 
-    # 次のステップの u を統合
-    n_u_next = n_u * n_E_visc + (dt / 6.0) * (
-        n_k1 * n_E_visc + 2.0 * n_k2 * n_E_visc_half + 2.0 * n_k3 * n_E_visc_half + n_k4
-    )
+    # 時間発展
+    for step in range(total_steps):
 
-    n_u = n_u_next
+        n_k1 = n_nonlinear_n(n_u)
 
-    # --- 後半の統計定常状態のデータをサンプリング ---
-    if step >= avg_start_step:
-        n_abs_u_sq = np.abs(n_u)**2
-        n_E_kn_instant = (n_abs_u_sq / (2.0 * n_k))
-        n_E_kn_sum += n_E_kn_instant
-        epsilon_instant = nu * np.sum((n_k**2) * n_abs_u_sq)
-        epsilon_sum += epsilon_instant
-        injection_instant = np.real(f * np.conj(n_u[3]))
-        injection_sum += injection_instant
+        n_u_half1 = (n_u + 0.5 * dt * n_k1) * n_E_visc_half
 
-        avg_count += 1
+        n_k2 = n_nonlinear_n(n_u_half1)
 
-print("計算完了！")
+        n_u_half2 = (n_u * n_E_visc_half + 0.5 * dt * n_k2)
 
-# 時間平均エネルギースペクトル
-n_E_kn_avg = n_E_kn_sum / avg_count
-epsilon_avg = epsilon_sum / avg_count
-injection_avg = injection_sum / avg_count
+        n_k3 = n_nonlinear_n(n_u_half2)
 
-print()
-print("--- 統計定常状態での時間平均 ---")
-print(f"平均エネルギー注入率 <I>       = {injection_avg:.10e}")
-print(f"平均エネルギー散逸率 <epsilon> = {epsilon_avg:.10e}")
-print(f"<I> / <epsilon>                = {injection_avg / epsilon_avg:.10f}")
-print(f"相対誤差                       = {abs(injection_avg - epsilon_avg) / abs(epsilon_avg):.6e}")
+        n_u_full = (n_E_visc * n_u + dt * n_E_visc_half * n_k3)
 
-# --- 4. 論文通りの無次元化（正規化）処理 ---
-k_d = (epsilon_avg / (nu**3))**(0.25)
+        n_k4 = n_nonlinear_n(n_u_full)
 
-n_x_normalized = n_k / k_d
-n_y_normalized = n_E_kn_avg / ((epsilon_avg**(0.25)) * (nu**(1.25)))
+        n_u_next = (n_u * n_E_visc + (dt / 6.0) * (n_k1 * n_E_visc + 2.0 * n_k2 * n_E_visc_half + 2.0 * n_k3 * n_E_visc_half + n_k4))
 
-# --- 5. プロット ---
-plt.figure(figsize=(7, 6))
-plt.loglog(n_x_normalized, n_y_normalized, 'x', label=r'$\nu=10^{-9}$ (Double Precision RK4)', color='black')
+        n_u = n_u_next
 
-n_x_line = np.logspace(-6, -1, 100)
-n_y_line = 0.5 * (n_x_line ** (-5.0/3.0))
-plt.loglog(n_x_line, n_y_line, color='black', linewidth=1.5, label='slope $-5/3$')
+        # 統計定常状態で平均
+        if step >= avg_start_step:
+            n_abs_u_sq = np.abs(n_u)**2
+            n_E_kn_instant = (n_abs_u_sq / (2.0 * n_k))
+            n_E_kn_sum += n_E_kn_instant
+            epsilon_instant = (nu * np.sum((n_k**2) * n_abs_u_sq))
+            epsilon_sum += epsilon_instant
+            injection_instant = np.float64(np.real(0.5 * (f * np.conj(n_u[3]) + n_u[3] * np.conj(f))))
+            injection_sum += injection_instant
+            avg_count += 1
 
-plt.xlim(1.0e-8, 1.0e2)
-plt.ylim(1.0e-10, 1.0e14)
-plt.xlabel(r'$k / k_d$')
-plt.ylabel(r'$E_e(k / k_d)$')
-plt.title('Fig. 1 Reconstructed (Strictly Double Precision)')
-plt.grid(True, which="both", ls=":", alpha=0.3)
-plt.legend(loc='lower left')
-plt.show()
+    print("計算完了！")
+
+    # 時間平均
+    n_E_kn_avg = n_E_kn_sum / avg_count
+    epsilon_avg = epsilon_sum / avg_count
+    injection_avg = injection_sum / avg_count
+
+    ratio = injection_avg / epsilon_avg
+
+    relative_error = (abs(injection_avg - epsilon_avg) / abs(epsilon_avg))
+
+    print()
+    print("--- 統計定常状態での時間平均 ---")
+    print(f"平均エネルギー注入率 <I> "f"= {injection_avg:.10e}")
+    print(
+        f"平均エネルギー散逸率 <epsilon> "f"= {epsilon_avg:.10e}")
+    print(f"<I> / <epsilon> "f"= {ratio:.10f}")
+    print(f"相対誤差 "f"= {relative_error:.6e}")
+
+    # 無次元化
+    k_d = (epsilon_avg / (nu**3))**0.25
+
+    n_x_normalized = n_k / k_d
+
+    n_y_normalized = (n_E_kn_avg/ ((epsilon_avg**0.25) * (nu**1.25)))
+
+    # 結果を返す
+    return {
+        "dt": dt,
+        "total_time": total_time,
+        "avg_start_time": avg_start_time,
+        "injection_avg": injection_avg,
+        "epsilon_avg": epsilon_avg,
+        "ratio": ratio,
+        "relative_error": relative_error,
+        "x_normalized": n_x_normalized.copy(),
+        "y_normalized": n_y_normalized.copy()
+    }
