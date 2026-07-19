@@ -9,7 +9,7 @@ from numba import njit
 N = 27
 q = np.float64(2.0)
 k0 = np.float64(2.0**(-4))
-nu = np.float64(1.0e-8)
+nu = np.float64(1.0e-9)
 beta = np.float64(0.5)
 f = np.complex128(5.0e-3 * (1.0 + 1.0j))
 
