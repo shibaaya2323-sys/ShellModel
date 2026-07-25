@@ -1,20 +1,11 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from numba import njit
 
 # 1. パラメータ
 
-def make_shell_parameters(N, nu):
+def make_shell_parameters(N):
 
     N = int(N)
-    nu = np.float64(nu)
-
-    if N < 4:
-        raise ValueError("Nは4以上にしてください。")
-
-    if nu <= 0:
-        raise ValueError("nuは正の値にしてください。")
-
     q = np.float64(2.0)
     k0 = np.float64(2.0**(-4))
     beta = np.float64(0.5)
@@ -44,11 +35,10 @@ def make_shell_parameters(N, nu):
         n_c1,
         n_c2,
         n_c3,
-        nu,
         f,
     )
 
-# 3. 非線形項
+# 2. 非線形項
 
 @njit
 def nonlinear_numba(
@@ -100,7 +90,7 @@ def nonlinear_numba(
 
     return n_nl
 
-# 4. エネルギーフラックス
+# 3. エネルギーフラックス
 
 @njit
 def calculate_flux_numba(
@@ -145,16 +135,13 @@ def calculate_flux_numba(
     # 高波数側から累積和を計算
     cumulative = 0.0
 
-    for i in range(N_local - 1, 0, -1):
+    for i in range(N_local - 1, -1, -1):
         cumulative += n_transfer[i]
-        n_flux[i - 1] = cumulative
-
-    # 最終シェルより高波数側は存在しない
-    n_flux[N_local - 1] = 0.0
+        n_flux[i] = cumulative
 
     return n_flux
-
-# 5. 時間積分
+    
+# 4. 時間積分
 
 @njit
 def run_flux_simulation_numba(
@@ -170,9 +157,10 @@ def run_flux_simulation_numba(
     nu,
     f,
 ):
+    
     """
-    IF-RK4で時間発展させ、平均エネルギースペクトルと
-    平均エネルギーフラックスを求める。
+    IF-RK4で時間発展させ、平均エネルギーフラックス、
+    平均注入率、平均散逸率を求める。
     """
 
     total_steps = int(round(total_time / dt))
@@ -197,15 +185,10 @@ def run_flux_simulation_numba(
     # 積分因子
     
     n_E_visc = np.exp(-nu * n_k_sq * dt)
-
     n_E_visc_half = np.exp(-nu * n_k_sq * dt * 0.5)
 
     # 時間平均用
-
-    n_energy_spectrum_sum = np.zeros(N_local,dtype=np.float64)
-
     n_flux_sum = np.zeros(N_local,dtype=np.float64)
-
     dissipation_sum = 0.0
     injection_sum = 0.0
 
@@ -217,38 +200,27 @@ def run_flux_simulation_numba(
 
         # ---------- IF-RK4 ----------
 
-        n_k1 = nonlinear_numba(n_u,n_c1,n_c2,n_c3,f,True,)
-
+        n_k1 = nonlinear_numba(n_u,n_c1,n_c2,n_c3,f,True)
         n_u_half1 = (n_u + 0.5 * dt * n_k1) * n_E_visc_half
 
-        n_k2 = nonlinear_numba(n_u_half1,n_c1,n_c2,n_c3,f,True,)
-
+        n_k2 = nonlinear_numba(n_u_half1,n_c1,n_c2,n_c3,f,True)
         n_u_half2 = (n_u * n_E_visc_half + 0.5 * dt * n_k2)
 
-        n_k3 = nonlinear_numba(n_u_half2,n_c1,n_c2,n_c3,f,True,)
-
+        n_k3 = nonlinear_numba(n_u_half2,n_c1,n_c2,n_c3,f,True)
         n_u_full = (n_E_visc * n_u + dt * n_E_visc_half * n_k3)
 
-        n_k4 = nonlinear_numba(n_u_full,n_c1,n_c2,n_c3,f,True,)
+        n_k4 = nonlinear_numba(n_u_full,n_c1,n_c2,n_c3,f,True)
 
         n_u = (n_u * n_E_visc + (dt / 6.0) * (n_k1 * n_E_visc + 2.0 * n_k2 * n_E_visc_half + 2.0 * n_k3 * n_E_visc_half + n_k4))
 
         # ---------- 時間平均 ----------
 
-        if (
-            step >= avg_start_step
-            and
-            (step - avg_start_step)
-            % sample_interval == 0
-        ):
+        if (step >= avg_start_step and (step - avg_start_step) % sample_interval == 0):
 
             n_abs_u_sq = (n_u.real**2 + n_u.imag**2)
 
-            # E(k_n) = |u_n|^2 / (2 k_n)
-            n_energy_spectrum_sum += (n_abs_u_sq / (2.0 * n_k))
-
             # エネルギーフラックス
-            n_flux_sum += calculate_flux_numba(n_u,n_c1,n_c2,n_c3,f,)
+            n_flux_sum += calculate_flux_numba(n_u,n_c1,n_c2,n_c3,f)
 
             # 瞬間散逸率
             # epsilon(t)
@@ -262,17 +234,10 @@ def run_flux_simulation_numba(
             avg_count += 1
 
     # 平均値
-   
-    n_energy_spectrum_avg = (n_energy_spectrum_sum / avg_count)
-
     n_flux_avg = (n_flux_sum / avg_count)
-
     dissipation_avg = (dissipation_sum / avg_count)
-
     injection_avg = (injection_sum / avg_count)
-
     ratio = (injection_avg / dissipation_avg)
-
     relative_error = (abs(injection_avg - dissipation_avg) / abs(dissipation_avg))
 
     # Kolmogorov波数
@@ -283,7 +248,6 @@ def run_flux_simulation_numba(
     n_flux_normalized = (n_flux_avg / dissipation_avg)
 
     return (
-        n_energy_spectrum_avg,
         n_flux_avg,
         injection_avg,
         dissipation_avg,
@@ -295,7 +259,7 @@ def run_flux_simulation_numba(
         avg_count,
     )
 
-# 6. 実行用関数
+# 5. 実行用関数
 
 def run_flux_simulation(
     N,
@@ -308,14 +272,13 @@ def run_flux_simulation(
     """
     エネルギーフラックス計算を実行する関数。
     """
-    N = int(N)
     nu = np.float64(nu)
     dt = np.float64(dt)
     total_time = np.float64(total_time)
     avg_start_time = np.float64(avg_start_time)
     sample_interval = int(sample_interval)
 
-    if N < 4:
+    if int(N) < 4:
         raise ValueError("Nは4以上にしてください。")
 
     if nu <= 0:
@@ -342,37 +305,19 @@ def run_flux_simulation(
         n_c1,
         n_c2,
         n_c3,
-        nu,
         f,
-    ) = make_shell_parameters(
-        N,
-        nu,
-    )
+    ) = make_shell_parameters(N=int(N))
 
-    total_steps = int(
-        round(total_time / dt)
-    )
+    total_steps = int(round(total_time / dt))
 
-    avg_start_step = int(
-        round(avg_start_time / dt)
-    )
+    avg_start_step = int(round(avg_start_time / dt))
 
-    estimated_count = (
-        (
-            total_steps
-            - avg_start_step
-            - 1
-        )
-        // sample_interval
-        + 1
-    )
+    estimated_count = ((total_steps - avg_start_step - 1) // sample_interval + 1)
 
     if estimated_count <= 0:
-        raise ValueError(
-            "平均化に使用できる点がありません。"
-        )
+        raise ValueError("平均化に使用できる点がありません。")
 
-    print(f"N = {N}")
+    print(f"N = {int(N)}")
     print(f"nu = {nu:.1e}")
     print(f"dt = {dt}")
     print(f"total_time = {total_time}")
@@ -398,7 +343,6 @@ def run_flux_simulation(
     )
 
     (
-        n_energy_spectrum_avg,
         n_flux_avg,
         injection_avg,
         dissipation_avg,
@@ -413,42 +357,27 @@ def run_flux_simulation(
     print("計算完了！")
     print()
     print("--- 統計定常状態での時間平均 ---")
-    print(f"平均エネルギー注入率 <I> "f"= {injection_avg:.10e}")
-    print(f"平均エネルギー散逸率 <epsilon> "f"= {dissipation_avg:.10e}")
-    print(f"<I> / <epsilon> "f"= {ratio:.10f}")
-    print(f"相対誤差 "f"= {relative_error:.6e}")
-    print(f"Kolmogorov波数 k_d "f"= {k_d:.10e}")
-    print(f"平均化に使用した点数 "f"= {avg_count:,}")
+    print(f"平均エネルギー注入率 <I> = {injection_avg:.10e}")
+    print(f"平均エネルギー散逸率 <epsilon> = {dissipation_avg:.10e}")
+    print(f"<I> / <epsilon> = {ratio:.10f}")
+    print(f"相対誤差 = {relative_error:.6e}")
+    print(f"Kolmogorov波数 k_d = {k_d:.10e}")
+    print(f"平均化に使用した点数 = {avg_count:,}")
 
     return {
-        "N": N,
-        "nu": nu,
-        "dt": np.float64(dt),
-        "total_time": np.float64(total_time),
-        "avg_start_time": np.float64(
-            avg_start_time
-        ),
-        "sample_interval": int(
-            sample_interval
-        ),
-        "energy_spectrum_avg":
-            n_energy_spectrum_avg.copy(),
-        "flux_avg":
-            n_flux_avg.copy(),
-        "injection_avg":
-            injection_avg,
-        "epsilon_avg":
-            dissipation_avg,
-        "ratio":
-            ratio,
-        "relative_error":
-            relative_error,
-        "k_d":
-            k_d,
-        "x_normalized":
-            n_x_normalized.copy(),
-        "flux_normalized":
-            n_flux_normalized.copy(),
-        "avg_count":
-            avg_count,
-    }
+    "N": int(N),
+    "nu": nu,
+    "dt": dt,
+    "total_time": total_time,
+    "avg_start_time": avg_start_time,
+    "sample_interval": sample_interval,
+    "flux_avg": n_flux_avg.copy(),
+    "injection_avg": injection_avg,
+    "epsilon_avg": dissipation_avg,
+    "ratio": ratio,
+    "relative_error": relative_error,
+    "k_d": k_d,
+    "x_normalized": n_x_normalized.copy(),
+    "flux_normalized": n_flux_normalized.copy(),
+    "avg_count": avg_count,
+}
