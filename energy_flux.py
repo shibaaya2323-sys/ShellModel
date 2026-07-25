@@ -139,7 +139,11 @@ def calculate_flux_numba(
         cumulative += n_transfer[i]
         n_flux[i] = cumulative
 
-    return n_flux
+        transfer_total = np.sum(n_transfer)
+
+    return n_flux, transfer_total
+
+  
     
 # 4. 時間積分
 
@@ -191,6 +195,8 @@ def run_flux_simulation_numba(
     n_flux_sum = np.zeros(N_local,dtype=np.float64)
     dissipation_sum = 0.0
     injection_sum = 0.0
+    transfer_total_sum = 0.0
+    transfer_total_abs_max = 0.0
 
     avg_count = 0
 
@@ -220,7 +226,14 @@ def run_flux_simulation_numba(
             n_abs_u_sq = (n_u.real**2 + n_u.imag**2)
 
             # エネルギーフラックス
-            n_flux_sum += calculate_flux_numba(n_u,n_c1,n_c2,n_c3,f)
+            n_flux_instant, transfer_total = calculate_flux_numba(n_u,n_c1,n_c2,n_c3,f)
+
+            n_flux_sum += n_flux_instant
+
+            transfer_total_sum += transfer_total
+
+            if abs(transfer_total) > transfer_total_abs_max:
+                transfer_total_abs_max = abs(transfer_total)
 
             # 瞬間散逸率
             # epsilon(t)
@@ -237,6 +250,7 @@ def run_flux_simulation_numba(
     n_flux_avg = (n_flux_sum / avg_count)
     dissipation_avg = (dissipation_sum / avg_count)
     injection_avg = (injection_sum / avg_count)
+    transfer_total_avg = transfer_total_sum / avg_count
     ratio = (injection_avg / dissipation_avg)
     relative_error = (abs(injection_avg - dissipation_avg) / abs(dissipation_avg))
 
@@ -257,6 +271,8 @@ def run_flux_simulation_numba(
         n_x_normalized,
         n_flux_normalized,
         avg_count,
+        transfer_total_avg,
+        transfer_total_abs_max,
     )
 
 # 5. 実行用関数
@@ -352,6 +368,8 @@ def run_flux_simulation(
         n_x_normalized,
         n_flux_normalized,
         avg_count,
+        transfer_total_avg,
+        transfer_total_abs_max,
     ) = results
 
     print("計算完了！")
@@ -363,6 +381,10 @@ def run_flux_simulation(
     print(f"相対誤差 = {relative_error:.6e}")
     print(f"Kolmogorov波数 k_d = {k_d:.10e}")
     print(f"平均化に使用した点数 = {avg_count:,}")
+    print()
+    print("--- 非線形エネルギー保存の確認 ---")
+    print(f"<sum T_n> = {transfer_total_avg:.10e}")
+    print(f"max |sum T_n| = {transfer_total_abs_max:.10e}")
 
     return {
     "N": int(N),
@@ -380,4 +402,6 @@ def run_flux_simulation(
     "x_normalized": n_x_normalized.copy(),
     "flux_normalized": n_flux_normalized.copy(),
     "avg_count": avg_count,
+    "transfer_total_avg": transfer_total_avg,
+    "transfer_total_abs_max": transfer_total_abs_max,
 }
