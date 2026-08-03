@@ -11,7 +11,7 @@ def make_shell_parameters(N):
     指定されたシェル数 N に対して、波数、非線形項の係数、
     および外力を作成する。
     """
-　  # シェル数を整数に変換
+    # シェル数を整数に変換
     N = int(N)
     q = np.float64(2.0)
     k0 = np.float64(2.0**(-4))
@@ -188,7 +188,7 @@ def run_flux_simulation_numba(
     f,
 ):
     
-   """
+    """
     積分因子を組み込んだ4次Runge--Kutta法で時間発展させる。
 
     統計定常状態に達した後のデータから、
@@ -203,6 +203,7 @@ def run_flux_simulation_numba(
 
     # 総時間を時間刻みで割り、
     # 時間積分の総ステップ数を求める
+
     total_steps = int(round(total_time / dt))
     avg_start_step = int(round(avg_start_time / dt))
 
