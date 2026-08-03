@@ -189,17 +189,17 @@ def run_simulation_numba(
             avg_count += 1
 
     
-　　# 累積値をサンプリング回数で割り、
+    # 累積値をサンプリング回数で割り、
     # 統計定常状態での時間平均を求める。
     n_E_kn_avg = (n_E_kn_sum / avg_count)
     epsilon_avg = (epsilon_sum / avg_count)
     injection_avg = (injection_sum / avg_count)
 
-　　# 注入率と散逸率の比を計算する。
+    # 注入率と散逸率の比を計算する。
     # 統計定常状態では、この値が1に近いことが期待される。
     ratio = (injection_avg / epsilon_avg)
 
-　　# 注入率と散逸率の相対誤差を計算する。
+    # 注入率と散逸率の相対誤差を計算する。
     relative_error = (abs(injection_avg - epsilon_avg) / abs(epsilon_avg))
 
     # Kolmogorov波数 k_d=(epsilon/nu^3)^(1/4)
