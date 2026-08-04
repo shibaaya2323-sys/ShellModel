@@ -99,7 +99,7 @@ def n_nonlinear_numba(n_u, n_c1, n_c2, n_c3, f):
 def run_simulation_numba(
     dt,
     total_time,
-    avg_start_time,
+    transient_time,
     sample_interval,
     n_k,
     n_k_sq,
@@ -114,7 +114,7 @@ def run_simulation_numba(
     total_steps = int(round(total_time / dt))
 
     # 時間平均を開始する時刻をステップ番号に変換する。
-    avg_start_step = int(round(avg_start_time / dt))
+    transient_step = int(round(transient_time / dt))
     
     # シェル数を波数配列から取得する。
     N_local = n_k.size
@@ -169,9 +169,9 @@ def run_simulation_numba(
 
         n_u = (n_u * n_E_visc +(dt / 6.0) * (n_k1 * n_E_visc + 2.0 * n_k2 * n_E_visc_half + 2.0 * n_k3 * n_E_visc_half + n_k4))
 
-        # avg_start_time以降で、sample_intervalステップごとに
+        # 過渡時間の経過後、sample_intervalステップごとに
         # エネルギースペクトルなどをサンプリングする。
-        if (step >= avg_start_step and (step - avg_start_step) % sample_interval == 0):
+        if (step >= transient_step and (step - transient_step) % sample_interval == 0):
             
             # 各シェルの |u_n|^2 を計算する。
             n_abs_u_sq = (n_u.real**2 + n_u.imag**2)
@@ -230,22 +230,60 @@ def run_simulation_numba(
 def run_simulation(
     dt,
     total_time,
-    avg_start_time,
+    transient_time,
     sample_interval=10,
 ):
     
+    # 入力値を浮動小数点数に変換する。
+    dt = np.float64(dt)
+    total_time = np.float64(total_time)
+    transient_time = np.float64(transient_time)
+
+    # 平均を取る時間を計算する。
+    avg_time = total_time - transient_time
+
+    # 入力値を確認する。
+    if dt <= 0.0:
+        raise ValueError("dtは正の値にしてください。")
+
+    if total_time <= 0.0:
+        raise ValueError("total_timeは正の値にしてください。")
+
+    if transient_time < 0.0:
+        raise ValueError("transient_timeは0以上にしてください。")
+
+    if transient_time >= total_time:
+        raise ValueError("transient_timeはtotal_timeより小さくしてください。")
+
+    if sample_interval < 1:
+        raise ValueError("sample_intervalは1以上の整数にしてください。")
+
     # 総ステップ数を計算する。
     total_steps = int(round(total_time / dt))
-    
+
+    # 過渡時間に対応するステップ数を計算する。
+    transient_steps = int(round(transient_time / dt))
+
+    # 時間平均を取る区間のステップ数を計算する。
+    avg_steps = total_steps - transient_steps
+
     # 計算条件を画面に表示する。
+    print("--- 計算条件 ---")
+    print(f"時間刻み dt: {dt}")
+    print(f"全時間 total_time: {total_time}")
+    print(f"過渡時間 transient_time: {transient_time}")
+    print(f"平均を取る時間 avg_time: {avg_time}")
     print(f"総ステップ数: {total_steps:,} 回")
-    print(f"平均値の取得間隔: "f"{sample_interval} ステップ")
+    print(f"過渡時間のステップ数: {transient_steps:,} 回")
+    print(f"平均区間のステップ数: {avg_steps:,} 回")
+    print(f"平均値の取得間隔: {sample_interval} ステップ")
+    print()   
     
     # Numbaで高速化した時間積分関数を実行する。
     results = run_simulation_numba(
-        np.float64(dt),
-        np.float64(total_time),
-        np.float64(avg_start_time),
+        dt,
+        total_time,
+        transient_time,
         int(sample_interval),
         n_k,
         n_k_sq,
@@ -271,6 +309,7 @@ def run_simulation(
     print("計算完了！")
     print()
     print("--- 統計定常状態での時間平均 ---")
+    print(f"平均を取った時間: {avg_time}")
     print(f"平均エネルギー注入率 <I> "f"= {injection_avg:.10e}")
     print(f"平均エネルギー散逸率 <epsilon> "f"= {epsilon_avg:.10e}")
     print(f"<I> / <epsilon> "f"= {ratio:.10f}")
@@ -278,20 +317,17 @@ def run_simulation(
     print(f"平均化に使用した点数 "f"= {avg_count:,}")
     
     # 計算条件と計算結果を辞書形式にまとめて返す。
-    # この辞書は、後のグラフ作成などで使用する。
     return {
-        "dt": np.float64(dt),
-        "total_time": np.float64(total_time),
-        "avg_start_time": np.float64(
-            avg_start_time
-        ),
-        "sample_interval": sample_interval,
+        "dt": dt,
+        "total_time": total_time,
+        "transient_time": transient_time,
+        "avg_time": avg_time,
+        "sample_interval": int(sample_interval),
         "injection_avg": injection_avg,
         "epsilon_avg": epsilon_avg,
         "ratio": ratio,
         "relative_error": relative_error,
-        "x_normalized":
-            n_x_normalized.copy(),
-        "y_normalized":
-            n_y_normalized.copy(),
+        "avg_count": avg_count,
+        "x_normalized": n_x_normalized.copy(),
+        "y_normalized": n_y_normalized.copy(),
     }
