@@ -1,5 +1,5 @@
 
-from shell_model_N22_nu1e7 import run_simulation
+from energy_spectrum import run_simulation
 
 result = run_simulation(
     dt=0.0001,
